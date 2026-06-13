@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const compression = require('compression');
 const { Readable } = require('stream');
 
 const app = express();
@@ -7,6 +8,9 @@ const PORT = process.env.PORT || 3000;
 
 // Allowed upstream host(s) for the proxy. Add more if your JSON references other domains.
 const ALLOWED_HOSTS = new Set(['dangify.net']);
+
+// Gzip responses (artists.json is ~20MB raw, ~3-4MB gzipped -> much faster load)
+app.use(compression());
 
 app.use(express.static(path.join(__dirname, 'public')));
 
