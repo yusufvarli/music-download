@@ -1,0 +1,15 @@
+{
+  "name": "mp3-indirici-site",
+  "version": "1.0.0",
+  "description": "Kurdi muzik arsivinden secimli/zip mp3 indirme sitesi (CORS proxy + statik arayuz)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

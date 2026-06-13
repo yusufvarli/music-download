@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: mp3-indirici-site
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start

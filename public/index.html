@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MP3 Toplu İndirme Sitesi</title>
+<style>
+  :root{
+    --bg:#0f1117; --panel:#171a23; --panel2:#1f2330; --border:#2b3040;
+    --text:#e6e8ef; --muted:#9aa3b8; --accent:#5b8cff; --accent2:#3fae6b;
+    --danger:#e0566a; --warn:#e0a83f;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--text); padding:24px;
+  }
+  .container{max-width:980px; margin:0 auto;}
+  h1{font-size:22px; margin-bottom:4px;}
+  .subtitle{color:var(--muted); font-size:13px; margin-bottom:20px;}
+  .panel{background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:16px;}
+  .hidden{display:none !important;}
+  #stats{display:flex; gap:24px; flex-wrap:wrap; font-size:13px; color:var(--muted);}
+  #stats b{color:var(--text); font-size:15px;}
+  #loadingMsg{padding:24px; text-align:center; color:var(--muted); font-size:14px;}
+  #controls{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:10px;}
+  #controls input[type=text]{
+    flex:1; min-width:180px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--panel2); color:var(--text); font-size:13px;
+  }
+  button{
+    background:var(--panel2); color:var(--text); border:1px solid var(--border); border-radius:8px;
+    padding:8px 14px; font-size:13px; cursor:pointer; transition:background .15s,border-color .15s;
+  }
+  button:hover:not(:disabled){border-color:var(--accent);}
+  button:disabled{opacity:.5; cursor:not-allowed;}
+  button.primary{background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600;}
+  button.primary:hover:not(:disabled){background:#4a7bf0;}
+  button.success{background:var(--accent2); border-color:var(--accent2); color:#fff; font-weight:600;}
+  button.success:hover:not(:disabled){background:#359a5d;}
+  button.warn{background:transparent; border-color:var(--warn); color:var(--warn);}
+  button.small{padding:4px 9px; font-size:12px;}
+  #selCount{font-size:13px; color:var(--muted); margin-left:auto;}
+  #actions{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:10px;}
+  #progressArea{margin-top:14px;}
+  .progressbar{height:10px; background:var(--panel2); border-radius:6px; overflow:hidden; border:1px solid var(--border);}
+  #progressFill{height:100%; width:0%; background:linear-gradient(90deg,var(--accent),var(--accent2)); transition:width .2s;}
+  #progressText{font-size:12px; color:var(--muted); margin-top:6px;}
+  #errorLog{margin-top:10px; max-height:140px; overflow:auto; font-size:12px; border:1px solid var(--border); border-radius:6px; padding:8px; background:var(--panel2);}
+  #errorLog .err{color:var(--danger); margin-bottom:4px; word-break:break-all;}
+  #errorLog a{color:var(--accent);}
+  #tree{max-height:560px; overflow:auto; border:1px solid var(--border); border-radius:8px;}
+  .artist{border-bottom:1px solid var(--border);}
+  .artist:last-child{border-bottom:none;}
+  .artist-header{display:flex; align-items:center; gap:8px; padding:10px 12px; cursor:pointer; user-select:none;}
+  .artist-header:hover{background:var(--panel2);}
+  .toggle{width:14px; color:var(--muted); font-size:11px;}
+  .artist-body{padding-left:28px; padding-bottom:6px;}
+  .album-header{display:flex; align-items:center; gap:8px; padding:6px 12px 6px 0; cursor:pointer; user-select:none;}
+  .album-header:hover{background:var(--panel2);}
+  .album-body{padding-left:28px;}
+  .track-row{display:flex; align-items:center; gap:8px; padding:4px 12px 4px 0; font-size:13px;}
+  .track-row:hover{background:var(--panel2);}
+  .track-name{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .track-status{font-size:11px; color:var(--muted); min-width:60px; text-align:right;}
+  .track-status.ok{color:var(--accent2);}
+  .track-status.err{color:var(--danger);}
+  .footer-note{font-size:12px; color:var(--muted); margin-top:14px; line-height:1.6;}
+  code{background:var(--panel2); padding:1px 5px; border-radius:4px; font-size:12px;}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🎵 MP3 Toplu İndirme Sitesi</h1>
+  <div class="subtitle">Sanatçı/albüm/parça seç, indir. Dosyalar bu site üzerinden (CORS proxy) sunulur.</div>
+
+  <div id="loadingMsg">Müzik listesi yükleniyor...</div>
+
+  <div id="app" class="hidden">
+    <div class="panel">
+      <div id="stats"></div>
+    </div>
+
+    <div class="panel">
+      <div id="controls">
+        <input type="text" id="search" placeholder="Sanatçı adına göre filtrele...">
+        <button id="selectAllBtn">Tümünü Seç</button>
+        <button id="clearAllBtn">Seçimi Temizle</button>
+        <span id="selCount">0 parça seçildi</span>
+      </div>
+      <div id="actions">
+        <button class="success" id="downloadZipBtn">📦 Seçilenleri ZIP olarak indir (sanatçı bazlı)</button>
+        <button class="warn" id="pauseBtn" disabled>Duraklat</button>
+        <button class="warn" id="stopBtn" disabled>Durdur</button>
+        <button id="resetProgressBtn" class="small">İlerlemeyi sıfırla</button>
+      </div>
+      <div id="progressArea" class="hidden">
+        <div class="progressbar"><div id="progressFill"></div></div>
+        <div id="progressText"></div>
+        <div id="errorLog" class="hidden"></div>
+      </div>
+    </div>
+
+    <div class="panel" style="padding:0;">
+      <div id="tree"></div>
+    </div>
+
+    <div class="footer-note">
+      <b>Notlar:</b><br>
+      • <b>"İndir (klasörlü, tek tek)"</b> her parçayı <code>Sanatçı/Albüm/Parça.mp3</code> yoluyla indirir. Chrome/Edge bunu Downloads klasörü altında otomatik klasörler olarak oluşturur.<br>
+      • <b>"ZIP olarak indir"</b> her sanatçı için ayrı bir .zip dosyası oluşturur (içinde albüm klasörleri ve şarkılar).<br>
+      • Çok sayıda dosya indirilirken tarayıcı "bu site birden fazla dosya indirmek istiyor" uyarısı gösterebilir — <b>İzin Ver / Allow</b> seçeneğini seç.<br>
+      • İndirme sırasında sekmeyi kapatmazsan ilerleme kaydedilir; "Duraklat/Durdur" ile kontrol edebilirsin. Tekrar başlatıldığında zaten indirilenler atlanır.<br>
+      • Bir parça indirilemezse "Hatalar" listesinde doğrudan bağlantısıyla gösterilir.
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  // ---------- State ----------
+  let artists = [];
+  let trackById = new Map();
+  let selected = new Set();
+  let totalTracks = 0;
+  let paused = false;
+  let stopped = false;
+  let running = false;
+
+  const STORAGE_KEY = 'mp3dl_completed_urls';
+  let completed = new Set(loadCompleted());
+
+  function loadCompleted(){
+    try{ return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
+    catch(e){ return []; }
+  }
+  function saveCompleted(){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify([...completed])); }catch(e){}
+  }
+
+  // ---------- Sanitization ----------
+  function sanitizeName(name){
+    if(!name) return 'untitled';
+    let s = String(name).replace(/[\\/:*?"<>|\x00-\x1F]/g, '_');
+    s = s.replace(/\s+/g,' ').trim();
+    s = s.replace(/[. ]+$/,'');
+    if(!s) s = 'untitled';
+    if(s.length > 150) s = s.slice(0,150);
+    return s;
+  }
+
+  // ---------- Build data from JSON ----------
+  function buildData(json){
+    artists = [];
+    trackById = new Map();
+    selected = new Set();
+    totalTracks = 0;
+    let id = 0;
+    const list = (json && json.data) ? json.data : [];
+
+    for(const a of list){
+      let origin = '';
+      try{ origin = new URL(a.artist_url).origin; }catch(e){ origin = ''; }
+
+      const albums = [];
+      for(const al of (a.albums || [])){
+        const tracks = [];
+        for(const t of (al.tracks || [])){
+          let url = t.download_url || '';
+          if(url && !/^https?:\/\//i.test(url)){
+            url = origin + url;
+          }
+          // Route through our same-origin CORS proxy
+          const proxiedUrl = '/api/proxy?url=' + encodeURIComponent(url);
+          const relPath = sanitizeName(a.artist_name) + '/' + sanitizeName(al.album_name) + '/' + sanitizeName(t.track_name) + '.mp3';
+          const track = {
+            id: id++, name: t.track_name || 'untitled', url: proxiedUrl, relPath,
+            artistName: a.artist_name, albumName: al.album_name,
+            checkboxEl: null, statusEl: null
+          };
+          trackById.set(track.id, track);
+          tracks.push(track);
+          totalTracks++;
+        }
+        albums.push({ name: al.album_name || 'untitled', tracks, checkboxEl: null });
+      }
+      artists.push({ name: a.artist_name || 'untitled', albums, checkboxEl: null });
+    }
+  }
+
+  // ---------- UI refs ----------
+  const loadingMsg = document.getElementById('loadingMsg');
+  const app = document.getElementById('app');
+  const statsEl = document.getElementById('stats');
+  const searchEl = document.getElementById('search');
+  const treeEl = document.getElementById('tree');
+  const selCountEl = document.getElementById('selCount');
+  const selectAllBtn = document.getElementById('selectAllBtn');
+  const clearAllBtn = document.getElementById('clearAllBtn');
+  const downloadDirectBtn = document.getElementById('downloadDirectBtn');
+  const downloadZipBtn = document.getElementById('downloadZipBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const resetProgressBtn = document.getElementById('resetProgressBtn');
+  const progressArea = document.getElementById('progressArea');
+  const progressFill = document.getElementById('progressFill');
+  const progressText = document.getElementById('progressText');
+  const errorLog = document.getElementById('errorLog');
+
+  // ---------- Load data from server ----------
+  async function init(){
+    try{
+      const resp = await fetch('/artists.json');
+      if(!resp.ok) throw new Error('HTTP ' + resp.status);
+      const json = await resp.json();
+      buildData(json);
+      loadingMsg.classList.add('hidden');
+      app.classList.remove('hidden');
+      renderStats();
+      renderTree();
+      updateSelCount();
+    }catch(err){
+      loadingMsg.textContent = 'Müzik listesi yüklenemedi: ' + err.message;
+    }
+  }
+
+  function renderStats(){
+    const albumCount = artists.reduce((s,a)=>s+a.albums.length, 0);
+    statsEl.innerHTML =
+      `<div><b>${artists.length}</b> sanatçı</div>` +
+      `<div><b>${albumCount}</b> albüm</div>` +
+      `<div><b>${totalTracks}</b> parça</div>` +
+      `<div><b>${completed.size}</b> daha önce indirilmiş (kayıtlı)</div>`;
+  }
+
+  // ---------- Selection helpers ----------
+  function setTrackSelected(track, val){
+    if(val) selected.add(track.id); else selected.delete(track.id);
+    if(track.checkboxEl) track.checkboxEl.checked = val;
+  }
+  function setAlbumSelected(album, val){
+    album.tracks.forEach(t=> setTrackSelected(t, val));
+    if(album.checkboxEl){ album.checkboxEl.checked = val; album.checkboxEl.indeterminate = false; }
+  }
+  function setArtistSelected(artist, val){
+    artist.albums.forEach(al=> setAlbumSelected(al, val));
+    if(artist.checkboxEl){ artist.checkboxEl.checked = val; artist.checkboxEl.indeterminate = false; }
+  }
+  function refreshAlbumCheckbox(album){
+    if(!album.checkboxEl) return;
+    const total = album.tracks.length;
+    const sel = album.tracks.filter(t=>selected.has(t.id)).length;
+    album.checkboxEl.checked = total>0 && sel===total;
+    album.checkboxEl.indeterminate = sel>0 && sel<total;
+  }
+  function refreshArtistCheckbox(artist){
+    if(!artist.checkboxEl) return;
+    let total=0, sel=0;
+    artist.albums.forEach(al=>{ total+=al.tracks.length; sel+=al.tracks.filter(t=>selected.has(t.id)).length; });
+    artist.checkboxEl.checked = total>0 && sel===total;
+    artist.checkboxEl.indeterminate = sel>0 && sel<total;
+  }
+  function updateSelCount(){
+    const n = selected.size;
+    const estSec = n * 0.4;
+    let estStr = '';
+    if(n>0){
+      if(estSec < 60) estStr = ` (~${Math.ceil(estSec)} sn)`;
+      else if(estSec < 3600) estStr = ` (~${Math.ceil(estSec/60)} dk)`;
+      else estStr = ` (~${(estSec/3600).toFixed(1)} sa)`;
+    }
+    selCountEl.textContent = `${n} parça seçildi${estStr}`;
+  }
+
+  // ---------- Tree rendering (lazy) ----------
+  function renderTree(){
+    treeEl.innerHTML = '';
+    const filter = searchEl.value.trim().toLowerCase();
+    artists.forEach(artist=>{
+      if(filter && !artist.name.toLowerCase().includes(filter)) return;
+      treeEl.appendChild(buildArtistNode(artist));
+    });
+    if(treeEl.children.length === 0){
+      treeEl.innerHTML = '<div style="padding:16px; color:var(--muted); font-size:13px;">Eşleşen sanatçı bulunamadı.</div>';
+    }
+  }
+
+  function buildArtistNode(artist){
+    const wrap = document.createElement('div');
+    wrap.className = 'artist';
+
+    const header = document.createElement('div');
+    header.className = 'artist-header';
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    artist.checkboxEl = cb;
+    refreshArtistCheckbox(artist);
+    cb.addEventListener('click', e=> e.stopPropagation());
+    cb.addEventListener('change', ()=>{
+      setArtistSelected(artist, cb.checked);
+      updateSelCount();
+    });
+
+    const toggle = document.createElement('span');
+    toggle.className = 'toggle';
+    toggle.textContent = '▶';
+
+    const trackCount = artist.albums.reduce((s,al)=>s+al.tracks.length, 0);
+    const label = document.createElement('span');
+    label.textContent = `${artist.name} — ${artist.albums.length} albüm, ${trackCount} parça`;
+
+    header.append(cb, toggle, label);
+
+    const body = document.createElement('div');
+    body.className = 'artist-body hidden';
+    let built = false;
+    let expanded = false;
+
+    header.addEventListener('click', e=>{
+      if(e.target === cb) return;
+      expanded = !expanded;
+      toggle.textContent = expanded ? '▼' : '▶';
+      body.classList.toggle('hidden', !expanded);
+      if(expanded && !built){
+        artist.albums.forEach(album=> body.appendChild(buildAlbumNode(album)));
+        built = true;
+      }
+    });
+
+    wrap.append(header, body);
+    return wrap;
+  }
+
+  function buildAlbumNode(album){
+    const wrap = document.createElement('div');
+
+    const header = document.createElement('div');
+    header.className = 'album-header';
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    album.checkboxEl = cb;
+    refreshAlbumCheckbox(album);
+    cb.addEventListener('click', e=> e.stopPropagation());
+    cb.addEventListener('change', ()=>{
+      setAlbumSelected(album, cb.checked);
+      const artist = artists.find(a=>a.albums.includes(album));
+      if(artist) refreshArtistCheckbox(artist);
+      updateSelCount();
+    });
+
+    const toggle = document.createElement('span');
+    toggle.className = 'toggle';
+    toggle.textContent = '▶';
+
+    const label = document.createElement('span');
+    label.textContent = `📀 ${album.name} — ${album.tracks.length} parça`;
+
+    header.append(cb, toggle, label);
+
+    const body = document.createElement('div');
+    body.className = 'album-body hidden';
+    let built = false;
+    let expanded = false;
+
+    header.addEventListener('click', e=>{
+      if(e.target === cb) return;
+      expanded = !expanded;
+      toggle.textContent = expanded ? '▼' : '▶';
+      body.classList.toggle('hidden', !expanded);
+      if(expanded && !built){
+        album.tracks.forEach(track=> body.appendChild(buildTrackNode(track, album)));
+        built = true;
+      }
+    });
+
+    wrap.append(header, body);
+    return wrap;
+  }
+
+  function buildTrackNode(track, album){
+    const row = document.createElement('div');
+    row.className = 'track-row';
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = selected.has(track.id);
+    track.checkboxEl = cb;
+    cb.addEventListener('change', ()=>{
+      setTrackSelected(track, cb.checked);
+      refreshAlbumCheckbox(album);
+      const artist = artists.find(a=>a.albums.includes(album));
+      if(artist) refreshArtistCheckbox(artist);
+      updateSelCount();
+    });
+
+    const name = document.createElement('span');
+    name.className = 'track-name';
+    name.textContent = track.name;
+    if(completed.has(track.url)) name.title = 'Daha önce indirildi';
+
+    const status = document.createElement('span');
+    status.className = 'track-status';
+    status.textContent = completed.has(track.url) ? '✓ indirildi' : '';
+    if(completed.has(track.url)) status.classList.add('ok');
+    track.statusEl = status;
+
+    const dlBtn = document.createElement('button');
+    dlBtn.className = 'small';
+    dlBtn.textContent = '⬇️';
+    dlBtn.title = 'Bu parçayı indir';
+    dlBtn.addEventListener('click', ()=> downloadSingleTrack(track, dlBtn, status));
+
+    row.append(cb, name, status, dlBtn);
+    return row;
+  }
+
+  // ---------- Search ----------
+  searchEl.addEventListener('input', renderTree);
+
+  // ---------- Select all / clear ----------
+  selectAllBtn.addEventListener('click', ()=>{
+    artists.forEach(a=> a.albums.forEach(al=> al.tracks.forEach(t=> selected.add(t.id))));
+    artists.forEach(a=>{ refreshArtistCheckbox(a); a.albums.forEach(al=>{ refreshAlbumCheckbox(al); al.tracks.forEach(t=>{ if(t.checkboxEl) t.checkboxEl.checked = true; }); }); });
+    updateSelCount();
+  });
+  clearAllBtn.addEventListener('click', ()=>{
+    selected.clear();
+    artists.forEach(a=>{
+      if(a.checkboxEl){ a.checkboxEl.checked=false; a.checkboxEl.indeterminate=false; }
+      a.albums.forEach(al=>{
+        if(al.checkboxEl){ al.checkboxEl.checked=false; al.checkboxEl.indeterminate=false; }
+        al.tracks.forEach(t=>{ if(t.checkboxEl) t.checkboxEl.checked=false; });
+      });
+    });
+    updateSelCount();
+  });
+
+  // ---------- Download helpers ----------
+  function triggerDownload(blob, filename){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(()=> URL.revokeObjectURL(url), 15000);
+  }
+
+  function sleep(ms){ return new Promise(r=> setTimeout(r, ms)); }
+
+  function addError(track, err){
+    errorLog.classList.remove('hidden');
+    const div = document.createElement('div');
+    div.className = 'err';
+    const msg = (err && err.message) ? err.message : String(err);
+    div.innerHTML = `${escapeHtml(track.artistName)} / ${escapeHtml(track.albumName)} / ${escapeHtml(track.name)} — ${escapeHtml(msg)} — <a href="${track.url}" target="_blank" rel="noopener">linki aç</a>`;
+    errorLog.appendChild(div);
+    errorLog.scrollTop = errorLog.scrollHeight;
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  async function downloadSingleTrack(track, btn, statusEl){
+    btn.disabled = true;
+    if(statusEl) { statusEl.textContent = '...'; statusEl.className = 'track-status'; }
+    try{
+      const resp = await fetch(track.url);
+      if(!resp.ok) throw new Error('HTTP ' + resp.status);
+      const blob = await resp.blob();
+      triggerDownload(blob, track.relPath);
+      completed.add(track.url);
+      saveCompleted();
+      if(statusEl){ statusEl.textContent = '✓ indirildi'; statusEl.className = 'track-status ok'; }
+    }catch(err){
+      if(statusEl){ statusEl.textContent = '✗ hata'; statusEl.className = 'track-status err'; }
+      addError(track, err);
+    }finally{
+      btn.disabled = false;
+    }
+  }
+
+  // ---------- Direct sequential download ----------
+  async function startDirectDownload(){
+    const list = [...selected].map(id=> trackById.get(id)).filter(t=> t && !completed.has(t.url));
+    if(list.length === 0){ alert('Seçili (ve henüz indirilmemiş) parça yok.'); return; }
+    beginRun(list.length);
+
+    let done = 0;
+    for(const track of list){
+      if(stopped) break;
+      while(paused && !stopped) await sleep(200);
+      if(stopped) break;
+
+      progressText.textContent = `(${done+1}/${list.length}) ${track.artistName} / ${track.albumName} / ${track.name}`;
+      try{
+        const resp = await fetch(track.url);
+        if(!resp.ok) throw new Error('HTTP ' + resp.status);
+        const blob = await resp.blob();
+        triggerDownload(blob, track.relPath);
+        completed.add(track.url);
+        if(track.statusEl){ track.statusEl.textContent = '✓ indirildi'; track.statusEl.className = 'track-status ok'; }
+      }catch(err){
+        if(track.statusEl){ track.statusEl.textContent = '✗ hata'; track.statusEl.className = 'track-status err'; }
+        addError(track, err);
+      }
+      done++;
+      progressFill.style.width = (done/list.length*100) + '%';
+      if(done % 10 === 0) saveCompleted();
+      await sleep(350);
+    }
+    saveCompleted();
+    endRun(done, list.length);
+  }
+
+  // ---------- ZIP per artist ----------
+  async function startZipDownload(){
+    const selectedArtists = artists.filter(a=> a.albums.some(al=> al.tracks.some(t=> selected.has(t.id))));
+    if(selectedArtists.length === 0){ alert('Seçili parça yok.'); return; }
+
+    const allSelected = [];
+    selectedArtists.forEach(a=> a.albums.forEach(al=> al.tracks.forEach(t=>{ if(selected.has(t.id)) allSelected.push(t); })));
+    beginRun(allSelected.length);
+
+    let globalDone = 0;
+    const total = allSelected.length;
+
+    for(const artist of selectedArtists){
+      if(stopped) break;
+      const zip = new JSZip();
+      let hasFiles = false;
+
+      for(const album of artist.albums){
+        for(const track of album.tracks){
+          if(!selected.has(track.id)) continue;
+          if(stopped) break;
+          while(paused && !stopped) await sleep(200);
+          if(stopped) break;
+
+          progressText.textContent = `(${globalDone+1}/${total}) [${artist.name}] ${album.name} / ${track.name}`;
+          try{
+            const resp = await fetch(track.url);
+            if(!resp.ok) throw new Error('HTTP ' + resp.status);
+            const blob = await resp.blob();
+            zip.file(sanitizeName(album.name) + '/' + sanitizeName(track.name) + '.mp3', blob);
+            hasFiles = true;
+            completed.add(track.url);
+            if(track.statusEl){ track.statusEl.textContent = '✓ zip\'e eklendi'; track.statusEl.className = 'track-status ok'; }
+          }catch(err){
+            if(track.statusEl){ track.statusEl.textContent = '✗ hata'; track.statusEl.className = 'track-status err'; }
+            addError(track, err);
+          }
+          globalDone++;
+          progressFill.style.width = (globalDone/total*100) + '%';
+        }
+        if(stopped) break;
+      }
+
+      if(hasFiles && !stopped){
+        progressText.textContent = `[${artist.name}] ZIP oluşturuluyor...`;
+        const content = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+        triggerDownload(content, sanitizeName(artist.name) + '.zip');
+        await sleep(400);
+      }
+      saveCompleted();
+    }
+
+    saveCompleted();
+    endRun(globalDone, total);
+  }
+
+  function beginRun(total){
+    running = true; paused = false; stopped = false;
+    downloadDirectBtn.disabled = true;
+    downloadZipBtn.disabled = true;
+    pauseBtn.disabled = false;
+    stopBtn.disabled = false;
+    pauseBtn.textContent = 'Duraklat';
+    progressArea.classList.remove('hidden');
+    progressFill.style.width = '0%';
+    progressText.textContent = `0/${total}`;
+  }
+  function endRun(done, total){
+    running = false;
+    downloadDirectBtn.disabled = false;
+    downloadZipBtn.disabled = false;
+    pauseBtn.disabled = true;
+    stopBtn.disabled = true;
+    progressText.textContent = stopped
+      ? `Durduruldu: ${done}/${total} tamamlandı.`
+      : `Tamamlandı: ${done}/${total}.`;
+    renderStats();
+  }
+
+  pauseBtn.addEventListener('click', ()=>{
+    paused = !paused;
+    pauseBtn.textContent = paused ? 'Devam Et' : 'Duraklat';
+  });
+  stopBtn.addEventListener('click', ()=>{
+    stopped = true;
+    paused = false;
+    pauseBtn.textContent = 'Duraklat';
+  });
+  resetProgressBtn.addEventListener('click', ()=>{
+    if(confirm('Kaydedilmiş indirme ilerlemesi sıfırlansın mı? (Dosyalar silinmez, sadece "indirildi" kaydı temizlenir.)')){
+      completed.clear();
+      saveCompleted();
+      renderStats();
+      renderTree();
+    }
+  });
+
+  downloadDirectBtn.addEventListener('click', ()=>{
+    if(running) return;
+    startDirectDownload();
+  });
+  downloadZipBtn.addEventListener('click', ()=>{
+    if(running) return;
+    startZipDownload();
+  });
+
+  window.addEventListener('DOMContentLoaded', init);
+})();
+</script>
+</body>
+</html>
